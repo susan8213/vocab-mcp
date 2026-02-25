@@ -90,3 +90,22 @@ export interface ExpandVocabResult {
   total: number;
   errors?: string[];
 }
+
+/**
+ * extract_vocab_from_text 工具的輸入參數
+ */
+export const ExtractVocabFromTextArgsSchema = z.object({
+  text: z.string().min(1, "text is required"),
+  level: z.enum(CEFRLevels).describe("目標 CEFR 等級，只抽取該等級的詞彙"),
+  max_items: z.number().int().min(1).max(100).optional().default(20),
+});
+export type ExtractVocabFromTextArgs = z.infer<typeof ExtractVocabFromTextArgsSchema>;
+
+/**
+ * extract_vocab_from_text 工具的輸出結果
+ */
+export interface ExtractVocabFromTextResult {
+  items: VocabItemInput[];
+  total: number;
+  source_length: number;
+}

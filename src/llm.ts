@@ -5,6 +5,8 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { VocabItemInput, VocabItemExpanded, IELTSTopics } from "./types.js";
+import { debugLog } from "./debug.js";
+import { config } from "./config.js";
 
 interface LLMResponse {
   definition_en: string;
@@ -86,15 +88,19 @@ function parseLLMResponse(responseText: string): LLMResponse {
 async function callGeminiAPI(prompt: string, apiKey: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
 
+  debugLog("callGeminiAPI: prompt", prompt);
+
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: config.expandModel,
     contents: prompt,
     config: {
       temperature: 0.7,
-      maxOutputTokens: 2048,
+      maxOutputTokens: config.expandMaxTokens,
       responseMimeType: "application/json",
     },
   });
+
+  debugLog("callGeminiAPI: raw response.text", response.text);
 
   if (!response.text) {
     throw new Error("Gemini API returned empty response");

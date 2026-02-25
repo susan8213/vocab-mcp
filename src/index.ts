@@ -11,13 +11,13 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { ExpandVocabArgsSchema, ExpandVocabArgs } from "./types.js";
+import { ExpandVocabArgsSchema, ExpandVocabArgs, ExtractVocabFromTextArgsSchema, ExtractVocabFromTextArgs } from "./types.js";
 import { expandVocab } from "./tools/expand_vocab.js";
+import { extractVocab } from "./tools/extract_vocab_from_text.js";
+import { config } from "./config.js";
 
-// 從環境變數讀取 API Key
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-
-if (!GEMINI_API_KEY) {
+// 驗證必要的環境變數
+if (!config.geminiApiKey) {
   console.error("Error: GEMINI_API_KEY environment variable is required");
   process.exit(1);
 }
@@ -82,6 +82,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["items"],
         },
       },
+      {
+        name: "extract_vocab_from_text",
+        description:
+          "從純文字（由 Playwright MCP 取得的文章內容）中抽取指定 CEFR 等級的英文單字與片語，附上詞性與原文語境",
+        inputSchema: {
+          type: "object",
+          properties: {
+            text: {
+              type: "string",
+              description: "文章純文字內容（由 Playwright MCP 的 playwright_get_visible_text 取得）",
+            },
+            level: {
+              type: "string",
+              description: "目標 CEFR 等級，只抽取該等級的詞彙",
+              enum: ["A1", "A2", "B1", "B2", "C1", "C2"],
+            },
+            max_items: {
+              type: "number",
+              description: "最多回傳幾個詞彙（預設 20，最大 100）",
+            },
+          },
+          required: ["text", "level"],
+        },
+      },
     ],
   };
 });
@@ -98,7 +122,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const validatedArgs = ExpandVocabArgsSchema.parse(args) as ExpandVocabArgs;
 
       // 執行詞彙擴充
-      const result = await expandVocab(validatedArgs, GEMINI_API_KEY);
+      const result = await expandVocab(validatedArgs, config.geminiApiKey);
 
       return {
         content: [
@@ -123,6 +147,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               null,
               2
             ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  if (name === "extract_vocab_from_text") {
+    try {
+      const validatedArgs = ExtractVocabFromTextArgsSchema.parse(args) as ExtractVocabFromTextArgs;
+      const result = await extractVocab(validatedArgs, config.geminiApiKey);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: errorMessage }, null, 2),
           },
         ],
         isError: true,
