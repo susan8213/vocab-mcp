@@ -15,10 +15,10 @@ export async function expandVocab(
 ): Promise<ExpandVocabResult> {
   const { items } = args;
 
-  console.log(`Expanding ${items.length} vocab items...`);
+  console.error(`Expanding ${items.length} vocab items...`);
 
   const { results, errors } = await expandVocabBatch(items, apiKey, (current: number, total: number) => {
-    console.log(`Progress: ${current}/${total}`);
+    console.error(`Progress: ${current}/${total}`);
   });
 
   const errorMessages = errors.map(
