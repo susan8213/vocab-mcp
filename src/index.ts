@@ -10,6 +10,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { ExpandVocabArgsSchema, ExpandVocabArgs, ExtractVocabFromTextArgsSchema, ExtractVocabFromTextArgs } from "./types.js";
 import { expandVocab } from "./tools/expand_vocab.js";
@@ -33,9 +35,105 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      prompts: {},
     },
   }
 );
+
+/**
+ * 列出可用 Prompts
+ */
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  prompts: [
+    {
+      name: "vocab_from_url",
+      description: "貼上文章網址，自動擷取詞彙並建立 Notion 頁面（需要 Playwright MCP 與 Notion MCP）",
+      arguments: [
+        { name: "url", description: "文章網址", required: true },
+        { name: "level", description: "CEFR 等級（A1–C2），預設 B2", required: false },
+        { name: "max_items", description: "最多擷取幾個單字，預設 20", required: false },
+        { name: "parent_database_id", description: "Notion parent database ID（選填，不填則由 agent 搜尋）", required: false },
+      ],
+    },
+  ],
+}));
+
+/**
+ * 回傳 Prompt 內容
+ */
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+
+  if (name === "vocab_from_url") {
+    const url = args?.url ?? "";
+    const level = args?.level ?? "B2";
+    const max_items = args?.max_items ?? "20";
+    const parent_database_id = args?.parent_database_id ?? "";
+
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `You are a vocabulary learning assistant.
+
+Process the following URL and execute all steps automatically in sequence without asking for confirmation:
+
+URL: ${url}
+
+## Step 1 — Fetch article
+Use the Playwright MCP tool to navigate to the URL and get its visible text content.
+Also extract the page title (use it as the Notion page title; fallback to the URL if unavailable).
+
+## Step 2 — Extract vocabulary
+Call \`extract_vocab_from_text\` with:
+- \`text\`: the full visible text from Step 1
+- \`level\`: ${level}
+- \`max_items\`: ${max_items}
+
+## Step 3 — Expand vocabulary
+Pass the \`items\` array from Step 2 directly to \`expand_vocab\`.
+
+## Step 4 — Determine target database
+${parent_database_id
+  ? `The target parent database ID is already provided: \`${parent_database_id}\`. Skip to Step 5.`
+  : `Use the Notion MCP search tool to find available databases. Present the results to the user and ask them to choose which database the new page should be saved under. Wait for the user's selection before proceeding.`
+}
+
+## Step 5 — Create Notion page
+Use the Notion MCP to create a new page under the selected parent database ID.
+- Page title = article title from Step 1
+- The page should contain two sections (use heading_2 blocks):
+  1. **Article** — insert the **exact visible text retrieved in Step 1** as paragraph blocks, without summarizing or truncating
+  2. **Vocabulary** — leave empty for now (the database will be added in Step 6)
+
+## Step 6 — Create vocabulary database
+Under the page created in Step 5, create a child inline database with the following properties:
+
+| Property name  | Notion type  | Source field                                          |
+|----------------|--------------|-------------------------------------------------------|
+| Name           | title        | \`lemma\`                                             |
+| Category       | multi_select | \`ielts_topics\`                                      |
+| Type           | select       | \`pos\`                                               |
+| AI Translation | rich_text    | \`definition_en\` + " / " + \`translation_zh\`        |
+| Description    | rich_text    | \`examples_en\` joined with "\\n"                     |
+| Synonyms       | rich_text    | each synonym on its own line, formatted as "- word"   |
+
+Create one database row per vocabulary item from Step 3's output.
+
+## Output
+After all steps complete, reply with:
+- The Notion page URL
+- A summary table of vocabulary items added (Name / Level / AI Translation)`,
+          },
+        },
+      ],
+    };
+  }
+
+  throw new Error(`Unknown prompt: ${name}`);
+});
 
 /**
  * 列出可用工具
